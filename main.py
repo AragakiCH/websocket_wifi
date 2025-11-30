@@ -1,0 +1,199 @@
+import asyncio
+import json
+from typing import Set, Optional, List
+
+import httpx
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+# ================== CONFIG ==================
+
+CORE_IP = "192.168.100.31"
+CORE_PORT = 8443
+
+CORE_USER = "boschrexroth"
+CORE_PASS = "boschrexroth"
+
+BASE_URL = f"https://{CORE_IP}:{CORE_PORT}"
+LOGBOOK_URL = f"{BASE_URL}/logbook/api/v2/entries"
+TOKEN_URL = f"{BASE_URL}/identity-manager/api/v1/auth/token"
+
+LOGBOOK_LIMIT = 500
+POLL_PERIOD_SEC = 2.0
+
+ONLY_PLC_MESSAGES = False  # pon True si luego quieres filtrar solo PLC
+
+# ================== APP FASTAPI ==================
+
+app = FastAPI()
+clients: Set[WebSocket] = set()
+
+http_client: Optional[httpx.AsyncClient] = None
+auth_token: Optional[str] = None
+
+seen_cursors = set()
+last_entries: List[dict] = []   # <-- snapshot que se mandará a nuevos clientes
+
+
+# ---------- Auth contra ctrlX (token) ----------
+
+async def get_token() -> str:
+    global auth_token
+
+    if auth_token:
+        return auth_token
+
+    async with httpx.AsyncClient(verify=False, timeout=5.0) as c:
+        resp = await c.post(
+            TOKEN_URL,
+            json={"name": CORE_USER, "password": CORE_PASS},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        auth_token = data["access_token"]
+        print("[auth] token obtenido")
+        return auth_token
+
+
+async def ensure_http_client():
+    global http_client
+    if http_client is None:
+        http_client = httpx.AsyncClient(verify=False, timeout=10.0)
+
+
+# ---------- Utils WebSocket ----------
+
+async def broadcast(message: dict):
+    """Envía el dict como JSON a todos los clientes conectados."""
+    if not clients:
+        return
+
+    text = json.dumps(message)
+    disconnected = []
+
+    for ws in list(clients):
+        try:
+            await ws.send_text(text)
+        except Exception:
+            disconnected.append(ws)
+
+    for ws in disconnected:
+        clients.discard(ws)
+
+
+# ---------- Polling del Logbook ----------
+
+async def poll_logbook_task():
+    global seen_cursors, last_entries
+
+    await ensure_http_client()
+
+    while True:
+        try:
+            token = await get_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+
+            params = {
+                "limit": LOGBOOK_LIMIT,
+                "reverse": "false",
+                "messageType": "rexroth_diag",
+            }
+
+            resp = await http_client.get(LOGBOOK_URL, headers=headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+            entries = data.get("entries", [])
+            print(f"[poll] {len(entries)} entries recibidos")
+
+            if ONLY_PLC_MESSAGES:
+                entries = [e for e in entries if e.get("entity") == "plc"]
+
+            if not entries:
+                await asyncio.sleep(POLL_PERIOD_SEC)
+                continue
+
+            # snapshot completo ordenado por timestamp
+            entries_sorted = sorted(entries, key=lambda e: e.get("timestamp", ""))
+            last_entries = entries_sorted  # <-- se usará cuando se conecte un cliente nuevo
+
+            # evitar duplicados usando __CURSOR
+            new_entries = []
+            for e in entries_sorted:
+                cursor = e.get("__CURSOR")
+                if not cursor:
+                    continue
+                if cursor not in seen_cursors:
+                    seen_cursors.add(cursor)
+                    new_entries.append(e)
+
+            if new_entries:
+                print(f"[poll] nuevos {len(new_entries)} logs → broadcast")
+                await broadcast({
+                    "type": "logbook",
+                    "entries": new_entries
+                })
+            else:
+                print("[poll] sin nuevos logs")
+
+        except httpx.HTTPStatusError as ex:
+            print(f"[logbook] HTTP error {ex.response.status_code}: {ex}")
+            if ex.response.status_code in (401, 403):
+                auth_token = None
+        except Exception as ex:
+            print(f"[logbook] error: {ex}")
+
+        await asyncio.sleep(POLL_PERIOD_SEC)
+
+
+# ---------- Endpoint WebSocket ----------
+
+@app.websocket("/ws/logbook")
+async def websocket_logbook(ws: WebSocket):
+    global last_entries
+
+    await ws.accept()
+    clients.add(ws)
+    print(f"[ws] cliente conectado (total: {len(clients)})")
+
+    # 🔥 Enviamos snapshot inicial apenas se conecta
+    if last_entries:
+        print(f"[ws] enviando snapshot inicial ({len(last_entries)} logs)")
+        try:
+            await ws.send_text(json.dumps({
+                "type": "logbook",
+                "entries": last_entries,
+            }))
+        except Exception as ex:
+            print(f"[ws] error enviando snapshot inicial: {ex}")
+
+    try:
+        # bucle solo para mantener la conexión viva
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        clients.discard(ws)
+        print(f"[ws] cliente desconectado (total: {len(clients)})")
+
+
+# ---------- Hooks de inicio/parada ----------
+
+@app.on_event("startup")
+async def on_startup():
+    print("[app] startup, iniciando tarea de logbook...")
+    asyncio.create_task(poll_logbook_task())
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global http_client
+    if http_client:
+        await http_client.aclose()
+        http_client = None
+    print("[app] shutdown completo")

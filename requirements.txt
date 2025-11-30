@@ -1,0 +1,17 @@
+# --- Framework Web ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+
+# --- HTTP Client ---
+httpx==0.27.0
+
+# --- Config / Models ---
+pydantic==2.8.2
+pydantic-core==2.20.1
+python-dotenv==1.0.1
+
+# --- Opcional (para futuro OPC UA) ---
+opcua==0.98.13
+
+# --- Utilidades ---
+rich==13.7.1

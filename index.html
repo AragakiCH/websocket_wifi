@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>WS Logbook Viewer</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: dark;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #050816;
+      color: #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 16px 24px;
+      background: radial-gradient(circle at top left, #22d3ee33, #1f2937 60%, #020617 100%);
+      border-bottom: 1px solid #111827;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #a5b4fc;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-left: auto;
+    }
+
+    .controls label {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .controls input[type="text"] {
+      background: #020617;
+      border-radius: 999px;
+      border: 1px solid #1f2937;
+      padding: 6px 12px;
+      min-width: 260px;
+      color: #e5e7eb;
+      font-size: 0.85rem;
+      outline: none;
+    }
+
+    .controls input[type="text"]:focus {
+      border-color: #22d3ee;
+      box-shadow: 0 0 0 1px #22d3ee33;
+    }
+
+    button {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #22c55e;
+      color: #022c22;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    button.secondary {
+      background: #020617;
+      color: #e5e7eb;
+      border-color: #4b5563;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    .panel {
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid #111827;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .panel h2 {
+      font-size: 0.85rem;
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-right: 6px;
+    }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .status-connected {
+      background: #22c55e;
+      box-shadow: 0 0 6px #22c55e;
+    }
+
+    .status-disconnected {
+      background: #ef4444;
+      box-shadow: 0 0 6px #ef4444;
+    }
+
+    .status-idle {
+      background: #6b7280;
+      box-shadow: 0 0 6px #6b7280;
+    }
+
+    .logs {
+      flex: 1;
+      overflow-y: auto;
+      border-radius: 12px;
+      background: radial-gradient(circle at top, #020617 0, #020617 40%, #000000 100%);
+      border: 1px solid #111827;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.8rem;
+    }
+
+    .log-entry {
+      padding: 6px 8px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      border: 1px solid #111827;
+      background: linear-gradient(135deg, #020617, #020617);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .log-entry .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid #1f2937;
+      background: #020617;
+    }
+
+    .badge-plc {
+      border-color: #22c55e55;
+      color: #bbf7d0;
+    }
+
+    .badge-level-info {
+      border-color: #22d3ee55;
+      color: #a5f3fc;
+    }
+
+    .badge-level-warning {
+      border-color: #facc1555;
+      color: #fef9c3;
+    }
+
+    .badge-level-err {
+      border-color: #f9737355;
+      color: #fee2e2;
+    }
+
+    .log-title {
+      font-size: 0.8rem;
+      color: #e5e7eb;
+      font-weight: 500;
+    }
+
+    .log-desc {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      white-space: pre-wrap;
+    }
+
+    .json-raw {
+      margin-top: 4px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      background: #020617;
+      border: 1px dashed #1f2937;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .json-raw summary {
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    .json-raw pre {
+      margin: 4px 0 0;
+      font-size: 0.7rem;
+    }
+
+    .options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.78rem;
+      color: #9ca3af;
+    }
+
+    .options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+      accent-color: #22c55e;
+    }
+
+    @media (max-width: 800px) {
+      main {
+        flex-direction: column;
+      }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .controls {
+        margin-left: 0;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ctrlX Logbook WebSocket Viewer</h1>
+    <div class="controls">
+      <label>
+        WS URL:
+        <input id="wsUrl" type="text" value="ws://localhost:9000/ws/logbook" />
+      </label>
+      <button id="btnConnect">Conectar</button>
+      <button id="btnDisconnect" class="secondary" disabled>Desconectar</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" style="max-width: 260px; flex: 0 0 260px;">
+      <h2>Estado</h2>
+      <div class="status-line" id="statusLine">
+        <span class="status-dot status-idle" id="statusDot"></span>
+        <span id="statusText">Desconectado</span>
+      </div>
+
+      <div class="options" style="margin-top: 12px;">
+        <label>
+          <input type="checkbox" id="chkAutoscroll" checked />
+          Autoscroll
+        </label>
+        <label>
+          <input type="checkbox" id="chkRawJson" />
+          Mostrar JSON crudo
+        </label>
+      </div>
+
+      <div style="margin-top: 12px; font-size: 0.78rem; color: #6b7280;">
+        Esta página solo se conecta al WebSocket y muestra lo que mande el servidor.
+        <br /><br />
+        Tu servicio en Python hace polling del logbook y emite eventos tipo:
+        <code>{"type": "logbook", "entries": [...]}</code>.
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Logs recibidos</h2>
+      <div class="logs" id="logContainer"></div>
+    </section>
+  </main>
+
+  <script>
+    let socket = null;
+    const wsUrlInput = document.getElementById("wsUrl");
+    const btnConnect = document.getElementById("btnConnect");
+    const btnDisconnect = document.getElementById("btnDisconnect");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const logContainer = document.getElementById("logContainer");
+    const chkAutoscroll = document.getElementById("chkAutoscroll");
+    const chkRawJson = document.getElementById("chkRawJson");
+
+    function setStatus(state, text) {
+      statusDot.className = "status-dot";
+      if (state === "connected") {
+        statusDot.classList.add("status-connected");
+      } else if (state === "disconnected") {
+        statusDot.classList.add("status-disconnected");
+      } else {
+        statusDot.classList.add("status-idle");
+      }
+      statusText.textContent = text;
+    }
+
+    function appendLogEntry(entry, fullPayload) {
+      const div = document.createElement("div");
+      div.className = "log-entry";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+
+      const ts = document.createElement("span");
+      ts.textContent = entry.timestamp || "sin timestamp";
+
+      const badges = document.createElement("div");
+      badges.style.display = "flex";
+      badges.style.flexWrap = "wrap";
+      badges.style.gap = "4px";
+
+      if (entry.entity) {
+        const bEntity = document.createElement("span");
+        bEntity.className = "badge";
+        if (entry.entity === "plc") {
+          bEntity.classList.add("badge-plc");
+        }
+        bEntity.textContent = entry.entity;
+        badges.appendChild(bEntity);
+      }
+
+      if (entry.logLevel) {
+        const bLevel = document.createElement("span");
+        bLevel.className = "badge";
+        if (entry.logLevel === "info") bLevel.classList.add("badge-level-info");
+        if (entry.logLevel === "warning") bLevel.classList.add("badge-level-warning");
+        if (entry.logLevel === "err") bLevel.classList.add("badge-level-err");
+        bLevel.textContent = entry.logLevel;
+        badges.appendChild(bLevel);
+      }
+
+      meta.appendChild(ts);
+      meta.appendChild(badges);
+      div.appendChild(meta);
+
+      const title = document.createElement("div");
+      title.className = "log-title";
+      title.textContent = entry.mainTitle || entry.detailedTitle || "(sin título)";
+      div.appendChild(title);
+
+      const desc = document.createElement("div");
+      desc.className = "log-desc";
+      desc.textContent =
+        entry.dynamicDescription ||
+        entry.detailedTitle ||
+        entry.mainDiagnosisCode ||
+        "";
+      div.appendChild(desc);
+
+      if (chkRawJson.checked && fullPayload) {
+        const raw = document.createElement("details");
+        raw.className = "json-raw";
+        const sum = document.createElement("summary");
+        sum.textContent = "Ver JSON crudo";
+        const pre = document.createElement("pre");
+        pre.textContent = JSON.stringify(fullPayload, null, 2);
+        raw.appendChild(sum);
+        raw.appendChild(pre);
+        div.appendChild(raw);
+      }
+
+      logContainer.appendChild(div);
+
+      if (chkAutoscroll.checked) {
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+    }
+
+    function appendSystemMessage(text) {
+      const div = document.createElement("div");
+      div.className = "log-entry";
+      div.style.opacity = "0.7";
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+
+      const ts = document.createElement("span");
+      ts.textContent = new Date().toISOString();
+
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = "system";
+
+      meta.appendChild(ts);
+      meta.appendChild(badge);
+      div.appendChild(meta);
+
+      const msg = document.createElement("div");
+      msg.className = "log-desc";
+      msg.textContent = text;
+      div.appendChild(msg);
+
+      logContainer.appendChild(div);
+      if (chkAutoscroll.checked) {
+        logContainer.scrollTop = logContainer.scrollHeight;
+      }
+    }
+
+    function connect() {
+      const url = wsUrlInput.value.trim();
+      if (!url) {
+        alert("Pon la URL del WebSocket, causa 😅");
+        return;
+      }
+
+      try {
+        socket = new WebSocket(url);
+      } catch (err) {
+        appendSystemMessage("Error creando WebSocket: " + err);
+        return;
+      }
+
+      setStatus("idle", "Conectando...");
+      btnConnect.disabled = true;
+      btnDisconnect.disabled = false;
+
+      socket.onopen = () => {
+        setStatus("connected", "Conectado");
+        appendSystemMessage("Conectado a " + url);
+        // Si quieres mandar un 'start' al servidor:
+        // socket.send("start");
+      };
+
+      socket.onmessage = (event) => {
+        console.log("📩 WS Mensaje recibido →", event.data);  // <-- AQUI 🔥
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "logbook" && Array.isArray(data.entries)) {
+            if (data.entries.length === 0) {
+              appendSystemMessage("Mensaje logbook sin entries.");
+              return;
+            }
+            data.entries.forEach((e) => appendLogEntry(e, e));
+          } else {
+            // Mensaje genérico
+            appendSystemMessage("Mensaje WS: " + event.data);
+          }
+        } catch (err) {
+          appendSystemMessage("Mensaje no-JSON: " + event.data);
+        }
+      };
+
+      socket.onerror = (event) => {
+        setStatus("disconnected", "Error");
+        appendSystemMessage("Error en WebSocket (revisa consola del navegador).");
+      };
+
+      socket.onclose = () => {
+        setStatus("disconnected", "Desconectado");
+        appendSystemMessage("WebSocket cerrado.");
+        btnConnect.disabled = false;
+        btnDisconnect.disabled = true;
+        socket = null;
+      };
+    }
+
+    function disconnect() {
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
+    }
+
+    btnConnect.addEventListener("click", connect);
+    btnDisconnect.addEventListener("click", disconnect);
+
+    // enter para conectar
+    wsUrlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !btnConnect.disabled) {
+        connect();
+      }
+    });
+  </script>
+</body>
+</html>
