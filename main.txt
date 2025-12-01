@@ -7,7 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 # ================== CONFIG ==================
 
-CORE_IP = "192.168.100.31"
+CORE_IP = "192.168.18.32"
 CORE_PORT = 8443
 
 CORE_USER = "boschrexroth"
